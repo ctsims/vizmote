@@ -21,6 +21,14 @@
 
 #define FILE_LIGHT_CONFIG "/lights.json"
 
+#define LED_PIN 0
+
+#define BUTTON_PIN 5
+#define BUTTON_TWO_PIN 4
+
+LedBlinker Blink(LED_PIN);
+ButtonController Buttons(BUTTON_PIN, BUTTON_TWO_PIN);
+
 char packet[255];
 
 WiFiClient net= WiFiClient();
@@ -77,6 +85,8 @@ void initStateDoc() {
 
 void ipRangeScan() {
   unsigned int r_st = millis();
+
+  Blink.blink();
   
   clearSceneBulbs();
   
@@ -85,14 +95,15 @@ void ipRangeScan() {
     Serial.print("Testing IP ");
     Serial.println(address);
     udpMessage(GET_LIGHT_STATE, address);
+    Blink.loop();
     delay(chill);
-    toggleLed();
     udpReceive(registerPacketReceived);
   }
   reportProgress(millis() - r_st);
   
   Serial.println("Saving Config");
   saveJSON(FILE_LIGHT_CONFIG, populateStateConfigDoc);
+  Blink.ledOFF();
 }
 
 void reportProgress(unsigned int span) {
@@ -242,18 +253,20 @@ void trigger() {
 
 void loop() {
   delay(100);
+  Blink.loop();
+  Buttons.loop();
   
   //See if there are any messages and clear the queue if any stale messages
   //are pending
   udpReceive(noOp);
 
-  switch(buttonLoop()) {
-    case ACTION_PRESS:
-      Serial.println("Press");
+  switch(Buttons.current_event) {
+    case EVENT_BUTTON_ONE:
+      Serial.println("Button One");
       trigger();
       break;
-    case ACTION_LONG_PRESS:
-      Serial.println("Long Press");
+    case EVENT_BUTTON_ONE_TWO_LONG:
+      Serial.println("Discovery Scan Triggered");
       ipRangeScan();
       break;
     default:
@@ -263,8 +276,9 @@ void loop() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(LED, OUTPUT);
+  Buttons.setup();
+  
+  Blink.setup();
   delay(300);
 
   if (!LittleFS.begin()) {
@@ -272,9 +286,10 @@ void setup() {
   }
 
   initWIFI();  
+  
   startListening();
   
   initStateDoc();
-
-  ledOFF();
+  
+  Blink.ledOFF();
 }
