@@ -18,13 +18,17 @@ static const char GET_LIGHT_STATE[] = R"EOF({"method":"getPilot","params":{}})EO
 static const char SET_OFF[] = R"EOF({"method":"setPilot","params":{"state":false}})EOF";
 static const char SET_ON[] = R"EOF({"method":"setPilot","params":{"state":true}})EOF";
 
-int sceneActions[] {WIZ_ACTION_CYCLE, WIZ_ACTION_CYCLE};
+int wizSceneCount  = 3;
+
+int sceneActions[] {WIZ_ACTION_CYCLE, WIZ_ACTION_CYCLE, WIZ_ACTION_CYCLE};
 
 List<wizbulb> universe;
 
 List<wizaddress> sceneBulbs;
 
 List<wizaddress> sceneTwoBulbs;
+
+List<wizaddress> sceneThreeBulbs;
 
 void registerFoundBulb(const char* mac, const char* address) {
   int bulbMatchingMac = -1;

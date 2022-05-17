@@ -53,13 +53,21 @@ void parseStateConfigDoc(DynamicJsonDocument stateDoc) {
   }
 
   JsonArray scene2  = stateDoc["scene2"];
-  for (int i = 0 ; i < scene.size() ; ++i) {
+  for (int i = 0 ; i < scene2.size() ; ++i) {
     addBulbToScene(scene2[i], sceneTwoBulbs);
   }
 
+  if ( stateDoc.containsKey("scene3") ) {
+    JsonArray scene3  = stateDoc["scene3"];
+    for (int i = 0 ; i < scene3.size() ; ++i) {
+      addBulbToScene(scene3[i], sceneThreeBulbs);
+    }
+  }
+
   JsonArray actions  = stateDoc["actions"];
-  sceneActions[0] = actions[0];
-  sceneActions[1] = actions[1];
+  for (int i = 0 ; i < actions.size() ; ++i) {
+    sceneActions[i] = actions[i];
+  }
 }
 
 void populateStateConfigDoc(DynamicJsonDocument* doc) {
@@ -92,11 +100,23 @@ void populateStateConfigDoc(DynamicJsonDocument* doc) {
       Serial.println("Couldn't add scene. Doc full");
     }
   }
+  
+  JsonArray scene3  = doc->createNestedArray("scene3");
+
+  for (int i = 0 ; i < sceneThreeBulbs.getSize() ; ++i) {
+    wizaddress wa = sceneThreeBulbs[i];
+    Serial.print("sm ");
+    Serial.println(wa.mac);
+    if (!scene3.add(wa.mac)) {
+      Serial.println("Couldn't add scene. Doc full");
+    }
+  }
 
   JsonArray actions  = doc->createNestedArray("actions");
 
-  actions.add(sceneActions[0]);
-  actions.add(sceneActions[1]);
+  for (int i = 0 ; i < wizSceneCount ; ++i) {
+    actions.add(sceneActions[i]);
+  }
 }
 
 void initStateDoc() {
@@ -264,8 +284,8 @@ int getBulbPropertyReliable(const char* outboundMessage, const char* address, co
 }
 
 void setStateOnBulbs(List<wizaddress> &scene, bool newState) {
-  for (int i = 0; i < sceneBulbs.getSize(); ++i) {
-    wizaddress wa = sceneBulbs[i];
+  for (int i = 0; i < scene.getSize(); ++i) {
+    wizaddress wa = scene[i];
 
     if (newState) {
       udpMessage(SET_ON, getBulbAddress(wa).address);
@@ -387,7 +407,10 @@ void stateBaselineLoop() {
       Serial.println("Programming Button 2");
       enterProgrammingMode(2);
       break;
-
+    case EVENT_BUTTON_THREE:
+      Serial.println("Cycle Scene 3");
+      bulbFlip(sceneThreeBulbs, sceneActions[2]);
+      break;
     case EVENT_BUTTON_THREE_LONG:
       Serial.println("Programming Button 3");
       enterProgrammingMode(3);
@@ -427,8 +450,11 @@ void stateProgrammingLoop() {
       updateScene(sceneBulbs);
     } else if (current_remote_button == 2) {
       updateScene(sceneTwoBulbs);
+    } else if (current_remote_button == 3) {
+      updateScene(sceneThreeBulbs);
     }
     saveStateDoc();
+    enterBaseline();
   } else {
     Serial.print("Exiting Config for event ");
     Serial.println(event);
