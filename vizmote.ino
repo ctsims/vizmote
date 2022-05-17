@@ -26,9 +26,10 @@
 
 #define BUTTON_PIN 4
 #define BUTTON_TWO_PIN 5
+#define BUTTON_THREE_PIN 12
 
 LedBlinker Blink(LED_PIN);
-ButtonController Buttons(BUTTON_PIN, BUTTON_TWO_PIN);
+ButtonController Buttons(BUTTON_PIN, BUTTON_TWO_PIN, BUTTON_THREE_PIN);
 
 char packet[255];
 
@@ -55,6 +56,10 @@ void parseStateConfigDoc(DynamicJsonDocument stateDoc) {
   //  for (int i = 0 ; i < scene.size() ; ++i) {
   //    addBulbToScene(scene2[i], sceneTwoBulbs);
   //  }
+
+  JsonArray actions  = stateDoc["actions"];
+  sceneActions[0] = actions[0];
+  sceneActions[1] = actions[1];
 }
 
 void populateStateConfigDoc(DynamicJsonDocument* doc) {
@@ -76,7 +81,7 @@ void populateStateConfigDoc(DynamicJsonDocument* doc) {
     if (!scene.add(wa.mac)) {
       Serial.println("Couldn't add scene. Doc full");
     }
-  }
+  }  
   JsonArray scene2  = doc->createNestedArray("scene2");
 
   for (int i = 0 ; i < sceneTwoBulbs.getSize() ; ++i) {
@@ -87,6 +92,11 @@ void populateStateConfigDoc(DynamicJsonDocument* doc) {
       Serial.println("Couldn't add scene. Doc full");
     }
   }
+
+  JsonArray actions  = doc->createNestedArray("actions");
+
+  actions.add(sceneActions[0]);
+  actions.add(sceneActions[1]);
 }
 
 void initStateDoc() {
@@ -113,6 +123,10 @@ void ipRangeScan() {
   }
   reportProgress(millis() - r_st);
 
+  saveStateDoc();
+}
+
+void saveStateDoc() {
   Serial.println("Saving Config");
   saveJSON(FILE_LIGHT_CONFIG, populateStateConfigDoc);
   Blink.ledOFF();
@@ -165,6 +179,7 @@ void registerPacketReceived(IPAddress address, char packet[]) {
 
 
 void updateScene(List<wizaddress> &scene) {
+  Blink.ledON();
   unsigned int r_st = millis();
 
   Blink.blink();
@@ -185,9 +200,7 @@ void updateScene(List<wizaddress> &scene) {
 
   printState();
 
-  Serial.println("Saving Config");
-  saveJSON(FILE_LIGHT_CONFIG, populateStateConfigDoc);
-  Blink.ledOFF();
+  saveStateDoc();
 }
 
 void noOp(IPAddress address, char packet[]) {
@@ -265,18 +278,27 @@ void setStateOnBulbs(List<wizaddress> &scene, bool newState) {
   }
 }
 
-void bulbFlip(List<wizaddress> &scene) {
+void bulbFlip(List<wizaddress> &scene, int action) {
   if (isScenePopulated(scene)) {
-    wizaddress trial = getFirstBulbInScene(scene);
-    Serial.print("First Bulb Identified: ");
-    Serial.println(trial.mac);
+    int newState = -1;
 
-    int newState = getBulbPropertyReliable(GET_LIGHT_STATE, getBulbAddress(trial).address, "state");
-    if (newState == STATE_BULB_UNAVAILABLE) {
-      Serial.println("No bulb state available");
-    } else {
-      setStateOnBulbs(scene, !newState);
+    if (action == WIZ_ACTION_CYCLE) {
+      wizaddress trial = getFirstBulbInScene(scene);
+      Serial.print("First Bulb Identified: ");
+      Serial.println(trial.mac);
+  
+      newState = getBulbPropertyReliable(GET_LIGHT_STATE, getBulbAddress(trial).address, "state");
+      if (newState == STATE_BULB_UNAVAILABLE) {
+        Serial.println("No bulb state available");
+        return;
+      }
+    } else if(action == WIZ_ACTION_ON) {
+      newState = 0;
+    } else if(action == WIZ_ACTION_OFF) {
+      newState = 1;
     }
+    
+    setStateOnBulbs(scene, !newState);
   } else {
     Serial.println("No available sample bulb");
   }
@@ -288,6 +310,14 @@ void reportMem() {
 
 Periodic ReportMemory(reportMem, 30000);
 
+
+#define REMOTE_STATE_BASELINE 0
+#define REMOTE_STATE_PROGRAMMING 2
+
+int remote_state = REMOTE_STATE_BASELINE;
+
+int current_remote_button = -1;
+
 void loop() {
   delay(100);
   Blink.loop();
@@ -298,22 +328,69 @@ void loop() {
   //are pending
   udpReceive(noOp);
 
-  switch (Buttons.current_event) {
+  switch (remote_state) {
+    case REMOTE_STATE_BASELINE:
+      stateBaselineLoop();
+      break;
+    case REMOTE_STATE_PROGRAMMING:
+      stateProgrammingLoop();
+      break;
+    default:
+      break;
+  }
+}
+
+void setProgrammingLedBlinkState() {
+  int action = sceneActions[current_remote_button - 1];
+  switch (action){
+  case WIZ_ACTION_CYCLE:
+    Blink.blink(BLINKER_PATTERN_ON_OFF);
+    break;
+  case WIZ_ACTION_ON:
+    Blink.blink(BLINKER_PATTERN_MOSTLY_ON);
+    break;
+  case WIZ_ACTION_OFF:
+    Blink.blink(BLINKER_PATTERN_MOSTLY_OFF);
+    break;
+  } 
+}
+
+void enterProgrammingMode(int button) {
+  Serial.print("Enter Programming mode for button: ");
+  Serial.println(button);
+  remote_state = REMOTE_STATE_PROGRAMMING;
+  current_remote_button = button;
+  setProgrammingLedBlinkState();
+}
+
+void enterBaseline() {
+  remote_state = REMOTE_STATE_BASELINE;
+  current_remote_button = -1;
+  Blink.ledOFF();
+}
+
+void stateBaselineLoop() {
+    switch (Buttons.current_event) {
     case EVENT_BUTTON_ONE:
       Serial.println("Cycle Scene 1");
-      bulbFlip(sceneBulbs);
+      bulbFlip(sceneBulbs, sceneActions[0]);
       break;
     case EVENT_BUTTON_ONE_LONG:
-      Serial.println("Update Config Scene 1");
-      updateScene(sceneBulbs);
+      Serial.println("Programming Button 1");
+      enterProgrammingMode(1);
       break;
     case EVENT_BUTTON_TWO:
       Serial.println("Cycle Scene 2");
-      bulbFlip(sceneTwoBulbs);
+      bulbFlip(sceneTwoBulbs, sceneActions[1]);
       break;
     case EVENT_BUTTON_TWO_LONG:
-      Serial.println("Update Config Scene 2");
-      updateScene(sceneTwoBulbs);
+      Serial.println("Programming Button 2");
+      enterProgrammingMode(2);
+      break;
+
+    case EVENT_BUTTON_THREE_LONG:
+      Serial.println("Programming Button 3");
+      enterProgrammingMode(3);
       break;
     case EVENT_BUTTON_ONE_TWO_LONG:
       Serial.println("Discovery Scan Triggered");
@@ -323,6 +400,43 @@ void loop() {
       break;
   }
 }
+
+void cycleProgrammingButtonAction() {
+  int current = sceneActions[current_remote_button -1];
+  Serial.println("Current Scene ");
+  Serial.println(current);
+  sceneActions[current_remote_button -1] = (current + 1) % 3;
+  Serial.println("New Scene ");
+  Serial.println(sceneActions[current_remote_button -1]);
+  setProgrammingLedBlinkState();
+}
+
+void stateProgrammingLoop() {
+  int currentButtonLong = current_remote_button * 2;
+  int currentButtonShort = current_remote_button * 1;
+  int event = Buttons.current_event;
+  
+  if (event == EVENT_IDLE) { 
+    
+  } else if(event == currentButtonShort) {
+    Serial.println("Cycling button state");
+    cycleProgrammingButtonAction();
+  } else if(event == currentButtonLong) {
+    Serial.println("Updating Scene Bulbs");
+    if (current_remote_button == 1) { 
+      updateScene(sceneBulbs);
+    } else if (current_remote_button == 2) {
+      updateScene(sceneTwoBulbs);
+    }
+    saveStateDoc();
+  } else {
+    Serial.println("Exiting Config");
+    saveStateDoc();
+    enterBaseline();
+  }
+}
+
+
 
 void setup() {
   Serial.begin(115200);

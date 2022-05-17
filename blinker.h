@@ -1,6 +1,10 @@
+#define LED 0
+
 const int BLINKER_PATTERN_ON_OFF[] {500, 500, 500, 500, 500, 500};
 const int BLINKER_PATTERN_SHORT_OFF[] {600, 200, 600, 200, 600, 200};
 const int BLINKER_PATTERN_MEEP_MEEP[] {100, 100, 100, 1000, 0, 0};
+const int BLINKER_PATTERN_MOSTLY_ON[] {2000, 100, 2000, 100, 2000, 100};
+const int BLINKER_PATTERN_MOSTLY_OFF[] {100, 2000, 100, 2000, 100, 2000};
 
 class LedBlinker {
   private:

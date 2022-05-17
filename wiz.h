@@ -1,3 +1,7 @@
+#define WIZ_ACTION_CYCLE 0
+#define WIZ_ACTION_ON 1
+#define WIZ_ACTION_OFF 2
+
 struct wizbulb {
   char mac[13];
   char address[16];
@@ -13,6 +17,8 @@ static const char REGISTER_MESSAGE[] = R"EOF({"method":"registration","params":{
 static const char GET_LIGHT_STATE[] = R"EOF({"method":"getPilot","params":{}})EOF";
 static const char SET_OFF[] = R"EOF({"method":"setPilot","params":{"state":false}})EOF";
 static const char SET_ON[] = R"EOF({"method":"setPilot","params":{"state":true}})EOF";
+
+int sceneActions[] {WIZ_ACTION_CYCLE, WIZ_ACTION_CYCLE};
 
 List<wizbulb> universe;
 

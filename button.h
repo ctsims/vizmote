@@ -11,6 +11,8 @@
 #define EVENT_BUTTON_ONE_LONG 2
 #define EVENT_BUTTON_TWO 3
 #define EVENT_BUTTON_TWO_LONG 4
+#define EVENT_BUTTON_THREE 5
+#define EVENT_BUTTON_THREE_LONG 6
 #define EVENT_BUTTON_ONE_TWO_LONG 50
 
 #define LONG_PRESS_THRESHOLD 2000
@@ -24,7 +26,7 @@ class ButtonController {
   };
   
   public:
-    ButtonController(int button_one_pin, int button_two_pin);
+    ButtonController(int button_one_pin, int button_two_pin, int button_three_pin);
     int current_event;
     void loop();
     void setup();
@@ -34,12 +36,14 @@ class ButtonController {
     int getButton(button_state& bState);
     button_state button_one;
     button_state button_two;
+    button_state button_three;
   
 };
 
-ButtonController::ButtonController(int button_one_pin, int button_two_pin) {
+ButtonController::ButtonController(int button_one_pin, int button_two_pin, int button_three_pin) {
   button_one.pin = button_one_pin;
   button_two.pin = button_two_pin;
+  button_three.pin = button_three_pin;
 }
 
 int ButtonController::getButton(button_state& bState) {
@@ -76,6 +80,7 @@ int ButtonController::getButton(button_state& bState) {
 int ButtonController::updateCurrentEvent() {
   int b1 = getButton(button_one);
   int b2 = getButton(button_two);
+  int b3 = getButton(button_three);
 
   //If one button triggers a long press, and the other is also down they are both now in long-press mode
   if (b1 == ACTION_LONG_PRESS && button_two.current == STATE_DOWN) {
@@ -94,6 +99,8 @@ int ButtonController::updateCurrentEvent() {
     return b1;
   } else if (b2) {
     return b2 + 2;
+  } else if (b3) {
+    return b3 + 4;
   } else {
     return EVENT_IDLE;
   }
@@ -109,5 +116,8 @@ void ButtonController::setup() {
   }
   if(button_two.pin != -1) {
     pinMode(button_two.pin, INPUT_PULLUP);
+  }
+  if(button_three.pin != -1) {
+    pinMode(button_three.pin, INPUT_PULLUP);
   }
 }
