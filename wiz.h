@@ -18,6 +18,8 @@ List<wizbulb> universe;
 
 List<wizaddress> sceneBulbs;
 
+List<wizaddress> sceneTwoBulbs;
+
 void registerFoundBulb(const char* mac, const char* address) {
   int bulbMatchingMac = -1;
   int bulbMatchingAddress = -1;
@@ -57,17 +59,17 @@ const wizbulb getBulbAddress(wizaddress wa){
   }
 }
 
-boolean isScenePopulated() {
-  return sceneBulbs.getSize() > 0;
+boolean isScenePopulated(List<wizaddress> &scene) {
+  return scene.getSize() > 0;
 }
 
-const wizaddress getFirstBulbInScene() {
-  return sceneBulbs[0];
+const wizaddress getFirstBulbInScene(List<wizaddress> &scene) {
+  return scene[0];
 }
 
-boolean isBulbInScene(const char* mac) {
-  for (int i = 0; i < sceneBulbs.getSize(); ++i) {
-    wizaddress wa = sceneBulbs[i];
+boolean isBulbInScene(const char* mac, List<wizaddress> &scene) {
+  for (int i = 0; i < scene.getSize(); ++i) {
+    wizaddress wa = scene[i];
     char* waMac = wa.mac;
     if (strcmp(mac, wa.mac) == 0) {
       return true;
@@ -77,12 +79,12 @@ boolean isBulbInScene(const char* mac) {
   return false;
 }
 
-boolean addBulbToScene(const char* mac) {
-  if (!isBulbInScene(mac)) {
+boolean addBulbToScene(const char* mac, List<wizaddress> &scene) {
+  if (!isBulbInScene(mac,scene)) {
     wizaddress wa;
     strlcpy(wa.mac, mac, sizeof(wa.mac));
     
-    sceneBulbs.add(wa);
+    scene.add(wa);
     return true;
   }
   return false;

@@ -27,13 +27,21 @@ void NTPConnect(void)
 
 
 void initWIFI(void) {
+  WiFi.disconnect();
+  
+  //Set sleep mode to none. Otherwise over time UDP starts being more and more unreliable
+  WiFi.setSleepMode (WIFI_NONE_SLEEP);
+  
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.println("Connecting to Wi-Fi");
+  Serial.print("Connecting to Wi-Fi");
 
   while (WiFi.status() != WL_CONNECTED){
     delay(500);
     Serial.print(".");
   }
+  
+  Serial.print("Connected @ ");
+  Serial.println(WiFi.localIP());
 }

@@ -10,36 +10,35 @@
 #include <LittleFS.h>
 #include "wiz.h"
 #include "config.h"
+#include "periodic.h"
 
 #define LIGHT_PORT 38899
 #define RECEIVE_PORT 4210
 
-#define MAX_WAIT 13000
+#define MAX_WAIT 15000
 #define MAX_INTERVAL 3000
 
 #define STATE_BULB_UNAVAILABLE -1
 
 #define FILE_LIGHT_CONFIG "/lights.json"
 
-#define LED_PIN 0
+#define LED_PIN LED_BUILTIN
 
-#define BUTTON_PIN 5
-#define BUTTON_TWO_PIN 4
+#define BUTTON_PIN 4
+#define BUTTON_TWO_PIN 5
 
 LedBlinker Blink(LED_PIN);
 ButtonController Buttons(BUTTON_PIN, BUTTON_TWO_PIN);
 
 char packet[255];
 
-WiFiClient net= WiFiClient();
+WiFiClient net = WiFiClient();
 WiFiUDP UDP;
 
 unsigned int chill = 250;
 
 bool fetched;
 StaticJsonDocument<255> responseDoc;
-
-static const char DOC_TEMPLATE[] = R"EOF({"scene" : [], "lights": [] }})EOF";
 
 void parseStateConfigDoc(DynamicJsonDocument stateDoc) {
   JsonArray lights  = stateDoc["lights"];
@@ -49,8 +48,13 @@ void parseStateConfigDoc(DynamicJsonDocument stateDoc) {
 
   JsonArray scene  = stateDoc["scene"];
   for (int i = 0 ; i < scene.size() ; ++i) {
-    addBulbToScene(scene[i]);
+    addBulbToScene(scene[i], sceneBulbs);
   }
+
+  //  JsonArray scene2  = stateDoc["scene2"];
+  //  for (int i = 0 ; i < scene.size() ; ++i) {
+  //    addBulbToScene(scene2[i], sceneTwoBulbs);
+  //  }
 }
 
 void populateStateConfigDoc(DynamicJsonDocument* doc) {
@@ -59,7 +63,7 @@ void populateStateConfigDoc(DynamicJsonDocument* doc) {
   for (int i = 0 ; i < universe.getSize() ; ++i) {
     wizbulb bulb = universe[i];
     JsonObject sBulb = lights.createNestedObject();
-    
+
     sBulb["mac"] = bulb.mac;
     sBulb["address"] = bulb.address;
   }
@@ -70,6 +74,16 @@ void populateStateConfigDoc(DynamicJsonDocument* doc) {
     Serial.print("sm ");
     Serial.println(wa.mac);
     if (!scene.add(wa.mac)) {
+      Serial.println("Couldn't add scene. Doc full");
+    }
+  }
+  JsonArray scene2  = doc->createNestedArray("scene2");
+
+  for (int i = 0 ; i < sceneTwoBulbs.getSize() ; ++i) {
+    wizaddress wa = sceneTwoBulbs[i];
+    Serial.print("sm ");
+    Serial.println(wa.mac);
+    if (!scene2.add(wa.mac)) {
       Serial.println("Couldn't add scene. Doc full");
     }
   }
@@ -87,9 +101,7 @@ void ipRangeScan() {
   unsigned int r_st = millis();
 
   Blink.blink();
-  
-  clearSceneBulbs();
-  
+
   for (int i = 0; i < 256 ; ++i) {
     IPAddress address = IPAddress(192, 168, 1, i);
     Serial.print("Testing IP ");
@@ -100,7 +112,7 @@ void ipRangeScan() {
     udpReceive(registerPacketReceived);
   }
   reportProgress(millis() - r_st);
-  
+
   Serial.println("Saving Config");
   saveJSON(FILE_LIGHT_CONFIG, populateStateConfigDoc);
   Blink.ledOFF();
@@ -128,29 +140,58 @@ void udpMessage(const char msg[], auto address) {
   UDP.beginPacket(address, 38899);
   Serial.println(msg);
   UDP.write(msg);
-  UDP.endPacket();
+  if (!UDP.endPacket()) {
+    Serial.println("UDP Packet Send Failure");
+  }
 }
 
 void registerPacketReceived(IPAddress address, char packet[]) {
   deserializeJson(responseDoc, packet);
   int scene = responseDoc["result"]["sceneId"];
   const char* mac = responseDoc["result"]["mac"];
-  
+
   char addressRaw[16];
   sprintf(addressRaw, "%d.%d.%d.%d", address[0], address[1], address[2], address[3]);
   const char* addressPtr = addressRaw;
 
   registerFoundBulb(mac, addressPtr);
-  
-  if (scene == 19) {
-    Serial.println("adding to scene");
-    addBulbToScene(mac);
-  }
+
+  //  if (scene == 19) {
+  //    Serial.println("adding to scene");
+  //    addBulbToScene(mac);
+  //  }
   printState();
 }
 
+
+void updateScene(List<wizaddress> &scene) {
+  unsigned int r_st = millis();
+
+  Blink.blink();
+  scene.clear();
+
+  for (int i = 0 ; i < universe.getSize() ; ++i) {
+    wizbulb b = universe[i];
+    int sceneId = getBulbPropertyReliable(GET_LIGHT_STATE, b.address, "sceneId");
+    if (sceneId == -1) {
+      Serial.println("Couldn't communicate with bulb for scene update");
+    }
+    if (sceneId == 19) {
+      Serial.println("adding to scene");
+      addBulbToScene(b.mac, scene);
+    }
+    Blink.loop();
+  }
+
+  printState();
+
+  Serial.println("Saving Config");
+  saveJSON(FILE_LIGHT_CONFIG, populateStateConfigDoc);
+  Blink.ledOFF();
+}
+
 void noOp(IPAddress address, char packet[]) {
-  
+
 }
 
 boolean udpRawReceive() {
@@ -158,7 +199,7 @@ boolean udpRawReceive() {
   int packetSize = UDP.parsePacket();
   if (packetSize) {
     Serial.print("Received packet! Size: ");
-    Serial.println(packetSize); 
+    Serial.println(packetSize);
     int len = UDP.read(packet, 255);
     if (len > 0)
     {
@@ -169,7 +210,7 @@ boolean udpRawReceive() {
     Serial.print("] ");
     Serial.println(packet);
     return true;
-  } 
+  }
   return false;
 }
 
@@ -182,22 +223,23 @@ boolean udpReceive(void (*pFunc)(IPAddress address, char packet[])) {
 }
 
 
-int getBulbStateReliable(const char* outboundMessage, const char* address) {
+int getBulbPropertyReliable(const char* outboundMessage, const char* address, const char* property_id) {
   boolean timedOut = false;
   unsigned int t_st = millis();
 
   int next_interval = 750;
   unsigned int next_send = millis() - 1;
   while ((millis() - t_st) < MAX_WAIT) {
+    Blink.loop();
     if (udpRawReceive()) {
-      
+
       deserializeJson(responseDoc, packet);
-      return responseDoc["result"]["state"];
-      
+      return responseDoc["result"][property_id];
+
     } else if (millis() > next_send) {
       //Repeat message
       udpMessage(outboundMessage, address);
-      
+
       next_send = millis() + next_interval;
       if (next_interval < MAX_INTERVAL) {
         next_interval = next_interval * 2;
@@ -208,62 +250,70 @@ int getBulbStateReliable(const char* outboundMessage, const char* address) {
   return STATE_BULB_UNAVAILABLE;
 }
 
-void setStateOnBulbs(bool newState) {
+void setStateOnBulbs(List<wizaddress> &scene, bool newState) {
   for (int i = 0; i < sceneBulbs.getSize(); ++i) {
     wizaddress wa = sceneBulbs[i];
-    
+
     if (newState) {
       udpMessage(SET_ON, getBulbAddress(wa).address);
     } else {
       udpMessage(SET_OFF, getBulbAddress(wa).address);
     }
     //TODO: We should be confirming message receipt
-//    delay(chill);
-//    udpReceive(noOp);
+    //    delay(chill);
+    //    udpReceive(noOp);
   }
 }
 
-int actionState = 0;
-int stateLengths = 1;
+void bulbFlip(List<wizaddress> &scene) {
+  if (isScenePopulated(scene)) {
+    wizaddress trial = getFirstBulbInScene(scene);
+    Serial.print("First Bulb Identified: ");
+    Serial.println(trial.mac);
 
-void trigger() {
-  Serial.print("Action: ");
-  Serial.println(actionState);
-  if (actionState == 0) {
-    if(isScenePopulated()) {
-      wizaddress trial = getFirstBulbInScene();
-      Serial.print("First Bulb Identified: ");
-      Serial.println(trial.mac);
-      
-      //int newState = getBulbState(trial); 
-      int newState = getBulbStateReliable(GET_LIGHT_STATE, getBulbAddress(trial).address); 
-      if (newState == STATE_BULB_UNAVAILABLE) {
-        Serial.println("No bulb state available");
-      } else {
-        setStateOnBulbs(!newState);
-      }
+    int newState = getBulbPropertyReliable(GET_LIGHT_STATE, getBulbAddress(trial).address, "state");
+    if (newState == STATE_BULB_UNAVAILABLE) {
+      Serial.println("No bulb state available");
     } else {
-      Serial.println("No available sample bulb");
+      setStateOnBulbs(scene, !newState);
     }
+  } else {
+    Serial.println("No available sample bulb");
   }
-  
-  actionState = (actionState + 1) % stateLengths;
 }
 
+void reportMem() {
+  Serial.println(ESP.getFreeHeap(), DEC);
+}
+
+Periodic ReportMemory(reportMem, 30000);
 
 void loop() {
   delay(100);
   Blink.loop();
   Buttons.loop();
-  
+  ReportMemory.loop();
+
   //See if there are any messages and clear the queue if any stale messages
   //are pending
   udpReceive(noOp);
 
-  switch(Buttons.current_event) {
+  switch (Buttons.current_event) {
     case EVENT_BUTTON_ONE:
-      Serial.println("Button One");
-      trigger();
+      Serial.println("Cycle Scene 1");
+      bulbFlip(sceneBulbs);
+      break;
+    case EVENT_BUTTON_ONE_LONG:
+      Serial.println("Update Config Scene 1");
+      updateScene(sceneBulbs);
+      break;
+    case EVENT_BUTTON_TWO:
+      Serial.println("Cycle Scene 2");
+      bulbFlip(sceneTwoBulbs);
+      break;
+    case EVENT_BUTTON_TWO_LONG:
+      Serial.println("Update Config Scene 2");
+      updateScene(sceneTwoBulbs);
       break;
     case EVENT_BUTTON_ONE_TWO_LONG:
       Serial.println("Discovery Scan Triggered");
@@ -277,7 +327,7 @@ void loop() {
 void setup() {
   Serial.begin(115200);
   Buttons.setup();
-  
+
   Blink.setup();
   delay(300);
 
@@ -285,11 +335,11 @@ void setup() {
     Serial.println("Failed to mount file system config");
   }
 
-  initWIFI();  
-  
+  initWIFI();
+
   startListening();
-  
+
   initStateDoc();
-  
+
   Blink.ledOFF();
 }
