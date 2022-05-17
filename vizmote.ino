@@ -52,10 +52,10 @@ void parseStateConfigDoc(DynamicJsonDocument stateDoc) {
     addBulbToScene(scene[i], sceneBulbs);
   }
 
-  //  JsonArray scene2  = stateDoc["scene2"];
-  //  for (int i = 0 ; i < scene.size() ; ++i) {
-  //    addBulbToScene(scene2[i], sceneTwoBulbs);
-  //  }
+  JsonArray scene2  = stateDoc["scene2"];
+  for (int i = 0 ; i < scene.size() ; ++i) {
+    addBulbToScene(scene2[i], sceneTwoBulbs);
+  }
 
   JsonArray actions  = stateDoc["actions"];
   sceneActions[0] = actions[0];
@@ -413,7 +413,7 @@ void cycleProgrammingButtonAction() {
 
 void stateProgrammingLoop() {
   int currentButtonLong = current_remote_button * 2;
-  int currentButtonShort = current_remote_button * 1;
+  int currentButtonShort = currentButtonLong - 1;
   int event = Buttons.current_event;
   
   if (event == EVENT_IDLE) { 
@@ -430,7 +430,8 @@ void stateProgrammingLoop() {
     }
     saveStateDoc();
   } else {
-    Serial.println("Exiting Config");
+    Serial.print("Exiting Config for event ");
+    Serial.println(event);
     saveStateDoc();
     enterBaseline();
   }
